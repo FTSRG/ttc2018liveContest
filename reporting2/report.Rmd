@@ -70,6 +70,10 @@ df = df[df$Tool != "Naiad-2-Thread" & df$Tool != "Naiad-4-Thread" & df$Tool != "
 df$Tool = gsub("^Naiad-1-Thread$", "Naiad (1 thread)", df$Tool)
 df$Tool = gsub("^Naiad-8-Thread$", "Naiad (8 threads)", df$Tool)
 
+## Drop NMF Parallel solution (buggy) and NMF Transactions solutions
+df = df[df$Tool != "NMF-Parallel" & df$Tool != "NMF-Transactions", ]
+
+
 ## EMF
 df$Tool = gsub("^EMFSolutionXtend$", "Xtend (EMF)", df$Tool)
 
