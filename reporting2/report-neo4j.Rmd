@@ -90,7 +90,7 @@ xbreaks = unique(df.aggregated$ChangeSet)
 xlabels = paste(xbreaks, sep = "")
 yaxis = nice_y_axis()
 ggplot(df.aggregated, aes(x=ChangeSet, y=MetricValue, fill=Tool)) +
-    geom_point(alpha=1.0, aes(col=Tool, shape=Tool, fill=Tool), size=3) +
+    geom_point(alpha=1.0, aes(col=Tool, shape=Tool, fill=Tool), size=2) +
     geom_line(aes(col=Tool, group=Tool)) +
     scale_x_log10(breaks=xbreaks) +
     #scale_y_log10(breaks=yaxis$ybreaks, labels=yaxis$ylabels) +
