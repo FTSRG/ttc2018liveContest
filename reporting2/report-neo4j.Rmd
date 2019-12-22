@@ -1,0 +1,138 @@
+---
+title: "TTC Social Media case benchmark report"
+output:
+  html_document:
+    code_folding: hide
+    number_sections: yes
+    toc: no
+  pdf_document:
+    highlight: zenburn
+    number_sections: yes
+    toc: no
+    keep_tex: true
+params:
+classoption: a4paper
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(plyr)
+library(RColorBrewer)
+
+gm_mean = function(x, na.rm=TRUE) {
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+
+nice_y_axis = function() {
+  options(scipen=999)
+  
+  # y axis labels
+  longticks = c(F, T, F, F, F, F, F, F, T)
+  shortticks = 2:10
+  range = -6:6
+  
+  ooms = 10^range
+  
+  ybreaks = as.vector(shortticks %o% ooms)
+  ylabels = as.character(ybreaks * longticks)
+  ylabels = gsub("^0$", "", ylabels)
+  
+  list(ybreaks = ybreaks, ylabels = ylabels)
+}
+```
+
+
+```{r loading and cleaning, echo=FALSE}
+df = read_delim("../output/output.csv", delim = ";")
+df = df[df$MetricName == "Time", ]
+df = df[df$PhaseName != "Initialization", ]
+df$MetricValue = as.numeric(df$MetricValue)
+# convert from nanoseconds to seconds
+df$MetricValue = df$MetricValue / 10^9
+
+# drop most tools for now
+#df = df[df$Tool == "EMFSolutionViatra" | df$Tool == "SQLSolution", ]
+
+### Captions
+
+### Neo4j
+df = df[startsWith(df$Tool, "Neo4j"), ]
+
+df$Tool = gsub("^Neo4jSolution$", "Materialize components by fixed-point calculation", df$Tool)
+df$Tool = gsub("^Neo4jSolutionBatch$", "Graph Algorithms library (batch)", df$Tool)
+df$Tool = gsub("^Neo4jSolutionBatch_algo_with_filtered_edges$", "Graph Algorithms + edge filter (batch)", df$Tool)
+df$Tool = gsub("^Neo4jSolution_overlay_graph$", "Enumerate paths on subgraph", df$Tool)
+df$Tool = gsub("^Neo4jSolution_explicit_component_algo$", "Materialize components by Graph Algorithms library", df$Tool)
+df$Tool = gsub("^Neo4jSolution_explicit_component$", "Materialize components by path operations", df$Tool)
+
+df = df[df$View == "Q2", ]
+df = df[df$PhaseName != "Load", ]
+df = df[df$Tool != "Neo4jSolutionBatch_rebuild_overlay", ]
+
+df$View = factor(df$View, levels=c("Q2"))
+df$PhaseName = factor(df$PhaseName, levels=c("Initial", "Update"))
+```
+
+## Summary plot
+
+```{r summary plot, echo=FALSE}
+df.aggregated = ddply(
+  .data = df,
+  .variables = c("Tool", "View", "ChangeSet", "PhaseName", "MetricName"),
+  #.fun = colwise(mean),
+  .fun = colwise(gm_mean)
+)
+
+#my_brewer = brewer.pal(n = 12, "Paired")[c(1, 2, 3, 4, 5, 6, 9, 10, 7)]
+#my_brewer
+
+xbreaks = unique(df.aggregated$ChangeSet)
+xlabels = paste(xbreaks, sep = "")
+yaxis = nice_y_axis()
+ggplot(df.aggregated, aes(x=ChangeSet, y=MetricValue, fill=Tool)) +
+    geom_point(alpha=1.0, aes(col=Tool, shape=Tool, fill=Tool), size=3) +
+    geom_line(aes(col=Tool, group=Tool)) +
+    scale_x_log10(breaks=xbreaks) +
+    #scale_y_log10(breaks=yaxis$ybreaks, labels=yaxis$ylabels) +
+    scale_y_log10(breaks=c(0.1, 1, 10, 100, 1000, 10000), labels=c(0.1, 1, 10, 100, 1000, 10000)) +
+    annotation_logticks(sides = "l") +
+    scale_shape_manual(values = c(2, 4, 13,
+                                  0, 7, 14
+                                  )) +  
+    facet_grid(View~PhaseName, drop=FALSE, scales="free") +
+    xlab("Model size") +
+    ylab("Execution time [s]") +
+    guides(shape=guide_legend(ncol=2)) +
+    theme_bw() +
+    theme(legend.position="bottom")
+
+#ggsave(file="results.pdf", width=250, height=170, units="mm")
+ggsave(file="results-neo4j.pdf", width=210, height=120, units="mm")
+```
+
+## Plot of update iterations
+
+```{r update plot}
+df = df[df$PhaseName == "Update", ]
+df.aggregated = ddply(
+  .data = df,
+  .variables = c("Tool", "View", "ChangeSet", "PhaseName", "Iteration", "MetricName"),
+  #.fun = colwise(mean),
+  .fun = colwise(gm_mean)
+)
+
+xbreaks = unique(df.aggregated$ChangeSet)
+xlabels = paste(xbreaks, sep = "")
+yaxis = nice_y_axis()
+ggplot(df.aggregated, aes(x=Iteration, y=MetricValue, fill=Tool)) +
+    geom_point(aes(col=Tool, shape=Tool)) +
+    geom_line(aes(col=Tool, group=Tool)) +
+    scale_x_log10(breaks=xbreaks) +  
+    scale_y_log10(breaks=yaxis$ybreaks, labels=yaxis$ylabels) +
+    scale_shape_manual(values = seq(0,24)) +
+    facet_grid(ChangeSet~View, drop=FALSE) +
+    xlab("Model size") +
+    ylab("Execution time [s]") +
+    theme_bw()
+ggsave(file="results-iterations.pdf", width=250, height=750, units="mm")
+```
