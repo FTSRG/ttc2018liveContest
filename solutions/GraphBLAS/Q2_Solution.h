@@ -4,4 +4,6 @@
 
 struct Q2_Solution : public Solution<Q2_Input> {
     using Solution::Solution;
+protected:
+    std::vector<score_type> top_scores_vector;
 };

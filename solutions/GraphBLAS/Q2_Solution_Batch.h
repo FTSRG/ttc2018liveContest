@@ -29,7 +29,7 @@ protected:
     static inline void
     compute_score_for_comment(const Q2_Input &input, GrB_Index comment_col, const GrB_Index *likes_comment_array_begin,
                               const GrB_Index *likes_comment_array_end, const GrB_Index *likes_user_array_begin,
-                              std::vector<score_type> &top_scores) __attribute__ ((always_inline)) {
+                              score_type* top_scores) __attribute__ ((always_inline)) {
         // find tuple sequences of each comment in row-major array
         // users liking a comment are stored consecutively
         auto[likes_comment_begin, likes_comment_end] = std::equal_range(likes_comment_array_begin,
@@ -78,8 +78,7 @@ protected:
 
             uint64_t score = std::accumulate(component_sizes.begin(), component_sizes.end(), uint64_t());
 
-            add_score_to_toplist(top_scores,
-                                 std::make_tuple(score, input.comments[comment_col].timestamp, comment_col));
+            top_scores[comment_col]=std::make_tuple(score, input.comments[comment_col].timestamp, comment_col);
         }
     }
 
@@ -89,23 +88,14 @@ public:
     virtual void compute_score_for_all_comments(const GrB_Index *likes_comment_array_begin,
                                                 const GrB_Index *likes_comment_array_end,
                                                 const GrB_Index *likes_user_array_begin,
-                                                std::vector<score_type> &top_scores) const {
+                                                score_type *top_scores_array) const {
         int nthreads = LAGraph_get_nthreads();
-#pragma omp parallel num_threads(nthreads)
-        {
-            std::vector<score_type> top_scores_local;
-
-#pragma omp for schedule(dynamic)
+#pragma omp target map(to: likes_comment_array_begin, likes_comment_array_end, likes_user_array_begin) map(from: top_scores_array)
+#pragma omp parallel for num_threads(nthreads)
             for (GrB_Index comment_col = 0; comment_col < input.comments_size(); ++comment_col) {
                 compute_score_for_comment(input, comment_col, likes_comment_array_begin, likes_comment_array_end,
-                                          likes_user_array_begin, top_scores_local);
+                                          likes_user_array_begin, top_scores_array);
             }
-
-#pragma omp critical(Q2_add_score_to_toplist)
-            for (auto score : top_scores_local) {
-                add_score_to_toplist(top_scores, score);
-            }
-        }
     }
 
     std::vector<score_type> calculate_score() {
@@ -124,8 +114,9 @@ public:
                                          input.likes_matrix_tran.get()));
         assert(nvals == input.likes_num);
 
+        top_scores_vector.resize(input.comments_size());
         compute_score_for_all_comments(likes_comment_array_begin, likes_comment_array_end, likes_user_array_begin,
-                                       top_scores);
+                                       top_scores_vector.data());
 
         // if comments with likes are not enough collect comments without like
         if (top_scores.size() < top_count) {
@@ -137,6 +128,10 @@ public:
                                          std::make_tuple(0, input.comments[comment_col].timestamp, comment_col));
                 }
             }
+        }
+
+        for (auto score : top_scores_vector) {
+            add_score_to_toplist(top_scores, score);
         }
 
         sort_top_scores(top_scores);

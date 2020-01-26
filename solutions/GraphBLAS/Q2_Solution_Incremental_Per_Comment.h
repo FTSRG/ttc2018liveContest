@@ -11,16 +11,10 @@
 #include "Q2_Solution_Batch.h"
 
 class Q2_Solution_Incremental_Per_Comment : public Q2_Solution_Batch {
-    std::vector<score_type> last_result;
     std::optional<std::reference_wrapper<const Q2_Input::Update_Type>> current_updates_opt;
 
 public:
     using Q2_Solution_Batch::Q2_Solution_Batch;
-
-    std::vector<uint64_t> initial_calculation() override {
-        last_result = calculate_score();
-        return convert_score_type_to_comment_id(last_result, input);
-    }
 
     std::vector<GrB_Index> get_affected_comment_cols() const {
         std::vector<Friends_Update> friends_updates = current_updates_opt.value().get().friends_updates;
@@ -122,39 +116,25 @@ public:
     void compute_score_for_all_comments(const GrB_Index *likes_comment_array_begin,
                                         const GrB_Index *likes_comment_array_end,
                                         const GrB_Index *likes_user_array_begin,
-                                        std::vector<score_type> &top_scores) const override {
+                                        score_type *top_scores_array) const override {
         if (!current_updates_opt.has_value()) {
             // for first run compute score for every comment
             Q2_Solution_Batch::compute_score_for_all_comments(likes_comment_array_begin, likes_comment_array_end,
-                                                              likes_user_array_begin, top_scores);
+                                                              likes_user_array_begin, top_scores_array);
         } else {
             const std::vector<GrB_Index> affected_comment_cols = get_affected_comment_cols();
 
-            for (auto[score, timestamp, comment_col]:last_result) {
-                if (score != 0 && // avoid caching and initiate reevaluation for comments without likes
-                    !std::binary_search(affected_comment_cols.begin(), affected_comment_cols.end(), comment_col))
-                    // use last scores if still valid
-                    add_score_to_toplist(top_scores, std::make_tuple(score, timestamp, comment_col));
-            }
-
             int nthreads = LAGraph_get_nthreads();
-#pragma omp parallel num_threads(nthreads)
-            {
-                std::vector<score_type> top_scores_local;
-
-#pragma omp for schedule(dynamic)
-                for (auto comment_col_iter = std::begin(affected_comment_cols);
-                     comment_col_iter != std::end(affected_comment_cols);
-                     ++comment_col_iter) {
-                    compute_score_for_comment(input, *comment_col_iter, likes_comment_array_begin,
-                                              likes_comment_array_end,
-                                              likes_user_array_begin, top_scores);
-                }
-
-#pragma omp critical(Q2_add_score_to_toplist)
-                for (auto score : top_scores_local) {
-                    add_score_to_toplist(top_scores, score);
-                }
+            GrB_Index const *begin = affected_comment_cols.data();
+            unsigned long size = affected_comment_cols.size();
+#pragma omp target map(to: begin, likes_comment_array_begin, likes_comment_array_end, likes_user_array_begin) map(from: top_scores_array)
+#pragma omp parallel for num_threads(nthreads)
+            for (size_t i=0;
+                 i<size;
+                 ++i) {
+                compute_score_for_comment(input, begin[i], likes_comment_array_begin,
+                                          likes_comment_array_end,
+                                          likes_user_array_begin, top_scores_array);
             }
         }
     }
@@ -162,7 +142,6 @@ public:
     std::vector<uint64_t> update_calculation(int iteration, const Q2_Input::Update_Type &current_updates) override {
         current_updates_opt = current_updates;
 
-        last_result = calculate_score();
-        return convert_score_type_to_comment_id(last_result, input);
+        return convert_score_type_to_comment_id(calculate_score(), input);
     }
 };
