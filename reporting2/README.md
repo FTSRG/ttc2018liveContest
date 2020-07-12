@@ -12,6 +12,13 @@ sudo apt install -y libssl-dev libxml2-dev libcurl4-openssl-dev
 sudo apt install -y r-base r-base-dev pandoc libssl-dev libxml2-dev libcurl4-openssl-dev
 ```
 
+On Fedore, use:
+
+```console
+sudo dnf install -y R
+sudo dnf install -y openssl-devel libxml2-devel libcurl-devel
+```
+
 Run R and install the [Tidyverse](https://www.tidyverse.org/) and [TinyTeX](https://yihui.name/tinytex/) package.
 
 To run GCC/G++ on multiple threads, set the following flags:
